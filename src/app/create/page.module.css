@@ -1,0 +1,183 @@
+/* Create Event Page Styles */
+
+.createPage {
+  min-height: 100vh;
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.createHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.stepIndicator {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.stepDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-border);
+  transition: all var(--transition-base);
+}
+
+.stepDotActive {
+  background: var(--color-brand);
+  width: 24px;
+  border-radius: 4px;
+}
+
+.createContent {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-12) var(--space-6);
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.createTitle {
+  font-size: clamp(1.5rem, 4vw, 2rem);
+  font-weight: 700;
+  text-align: center;
+  margin-bottom: var(--space-2);
+}
+
+.createSubtitle {
+  color: var(--color-text-secondary);
+  text-align: center;
+  margin-bottom: var(--space-8);
+}
+
+/* ---- Event Type Selection ---- */
+.typeGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  width: 100%;
+}
+
+.typeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  background: var(--color-bg-card);
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  text-align: center;
+  transition: all var(--transition-base);
+  font-family: var(--font-body);
+}
+
+.typeCard:hover {
+  border-color: var(--color-brand);
+  transform: translateY(-2px);
+  background: var(--color-bg-card-hover);
+}
+
+.typeCardSelected {
+  border-color: var(--color-brand);
+  background: var(--color-brand-muted);
+  box-shadow: 0 0 0 3px var(--color-brand-glow);
+}
+
+.typeEmoji {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.typeLabel {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.typeDesc {
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+/* ---- Form ---- */
+.formCard {
+  width: 100%;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.formRow {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: flex-end;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border);
+}
+
+.budgetRow {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.error {
+  font-size: 0.8125rem;
+  color: var(--color-danger);
+  margin-top: 2px;
+}
+
+/* ---- Priority chips ---- */
+.priorityGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.priorityChip {
+  padding: 6px 14px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg-input);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.priorityChip:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand-light);
+}
+
+.priorityChipSelected {
+  background: var(--color-brand-muted);
+  border-color: var(--color-brand);
+  color: var(--color-brand-light);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 640px) {
+  .typeGrid { grid-template-columns: 1fr; }
+  .formCard { padding: var(--space-5); }
+  .budgetRow { flex-direction: column; }
+  .createContent { padding: var(--space-8) var(--space-4); }
+}
