@@ -148,7 +148,7 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
       </div>
 
       {/* Messages */}
-      <div className={styles.chatMessages}>
+      <div className={styles.chatMessages} role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation messages">
         {chatMessages.length === 0 ? (
           <div style={{ padding: 'var(--space-4)', textAlign: 'center', color: 'var(--color-text-muted)' }}>
             <span style={{ fontSize: '2rem', display: 'block', marginBottom: '8px' }}>💡</span>
@@ -212,7 +212,7 @@ export default function ChatPanel({ onClose }: ChatPanelProps) {
         )}
 
         {isSending && (
-          <div className={styles.chatMessage}>
+          <div className={styles.chatMessage} role="status" aria-live="polite">
             <div className={styles.chatAvatar} aria-hidden="true">
               ✦
             </div>

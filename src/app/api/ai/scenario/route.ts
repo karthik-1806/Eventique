@@ -36,6 +36,7 @@ const ScenarioRequestSchema = z.object({
 
 import { getClientIp, checkRateLimit, createRateLimitErrorResponse, RATE_LIMITS } from '@/lib/security/rate-limiter';
 import { generateCacheKey, getCachedAIResponse, setCachedAIResponse } from '@/lib/ai/ai-cache';
+import { callFastAPI } from '@/lib/api/fastapi-client';
 
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
@@ -50,6 +51,37 @@ export async function POST(request: NextRequest) {
     body = ScenarioRequestSchema.parse(raw);
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+
+  // Attempt FastAPI delegation if configured
+  if (process.env.FASTAPI_BACKEND_URL) {
+    const fastApiRes = await callFastAPI<{ explanation: string }>('/scenario/simulate', {
+      event_id: 'scenario-preview',
+      name: body.scenarioName,
+      description: 'Impact calculation',
+      changes: body.changes,
+      budget: {
+        total_budget: body.eventContext.totalBudget,
+        currency: body.eventContext.currency,
+        categories: [],
+      },
+      event: {
+        id: 'scenario-preview',
+        type: body.eventContext.eventType,
+        name: body.eventContext.eventName,
+        date: body.eventContext.date,
+        location: body.eventContext.location,
+        guest_count: body.eventContext.guestCount,
+        total_budget: body.eventContext.totalBudget,
+        currency: body.eventContext.currency,
+        style: body.eventContext.style,
+        priorities: body.eventContext.priorities,
+        requirements: body.eventContext.requirements,
+      },
+    });
+    if (fastApiRes.success && fastApiRes.data?.explanation) {
+      return NextResponse.json({ success: true, explanation: fastApiRes.data.explanation });
+    }
   }
 
   // Fallback explanation if API key is not set

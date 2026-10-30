@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { v4 as uuidv4 } from 'uuid';
 import { useEventContext } from '@/context/EventContext';
 import type { RecommendationType, RecommendationImpact, RecommendationPriority } from '@/lib/models/types';
 import { formatCurrency, getBudgetHealthStatus, calculateBudgetSummary } from '@/lib/engines/budget-engine';
@@ -81,7 +82,6 @@ export default function DashboardPage() {
       const { data } = await response.json();
 
       // Apply AI budget allocations
-      const { v4: uuidv4 } = await import('uuid');
       const categories = data.budgetAllocations.map((a: { name: string; percent: number; reasoning: string }) => {
         const existing = state.currentPlan!.budget.categories.find((c) => c.name === a.name);
         return {
@@ -96,9 +96,8 @@ export default function DashboardPage() {
       });
 
       // Merge vendors
-      const { v4: uuid2 } = await import('uuid');
       const newVendors = data.vendorRecommendations.map((v: { category: string; priority: string; reasoning: string; estimatedCostRange: string }) => ({
-        id: uuid2(),
+        id: uuidv4(),
         eventId: state.currentPlan!.event.id,
         category: v.category,
         name: '',
@@ -111,12 +110,11 @@ export default function DashboardPage() {
       }));
 
       // Build recommendations
-      const { v4: uuid3 } = await import('uuid');
       const allRecs = [
         ...data.planningRecommendations,
         ...data.riskWarnings,
       ].map((r: { type: string; title: string; explanation: string; impact: string; priority: string; suggestedAction: string }) => ({
-        id: uuid3(),
+        id: uuidv4(),
         type: (r.type as RecommendationType) || 'idea',
         title: r.title,
         explanation: r.explanation,
@@ -134,7 +132,7 @@ export default function DashboardPage() {
         chat: [
           ...state.currentPlan!.chat,
           {
-            id: uuid3(),
+            id: uuidv4(),
             role: 'assistant' as const,
             content: `✦ **AI Plan Generated!**\n\n${data.planSummary}\n\nI've updated your budget allocation, added vendor categories, and identified ${allRecs.length} recommendations. Check the **AI Insights** tab for the full breakdown.`,
             timestamp: new Date().toISOString(),
@@ -154,33 +152,79 @@ export default function DashboardPage() {
     }
   }, [state.currentPlan, getEventContext, dispatch]);
 
-  if (!state.isHydrated || !state.currentPlan) {
-    return (
-      <div className={styles.loading} aria-live="polite" aria-busy="true">
-        <div className="spinner" aria-hidden="true" />
-        <span>Loading your plan...</span>
-        <span className={styles.loadingLabel}>Preparing your event workspace</span>
-      </div>
-    );
-  }
+  const currentPlan = state.currentPlan;
 
-  const { event, budget, tasks, vendors, recommendations } = state.currentPlan;
-  const budgetSummary = calculateBudgetSummary(budget, event.totalBudget);
-  const daysUntilEvent = getDaysUntilEvent(event.date);
-  const progress = getPlanningProgress(tasks);
-  const budgetHealth = getBudgetHealthStatus(budgetSummary);
-  const taskStats = getTaskStats(tasks);
+  const budgetSummary = useMemo(
+    () => (currentPlan ? calculateBudgetSummary(currentPlan.budget, currentPlan.event.totalBudget) : null),
+    [currentPlan],
+  );
+  const daysUntilEvent = useMemo(
+    () => (currentPlan ? getDaysUntilEvent(currentPlan.event.date) : 0),
+    [currentPlan],
+  );
+  const progress = useMemo(
+    () => (currentPlan ? getPlanningProgress(currentPlan.tasks) : 0),
+    [currentPlan],
+  );
+  const budgetHealth = useMemo(
+    () => (budgetSummary ? getBudgetHealthStatus(budgetSummary) : 'healthy'),
+    [budgetSummary],
+  );
+  const taskStats = useMemo(
+    () => (currentPlan ? getTaskStats(currentPlan.tasks) : null),
+    [currentPlan],
+  );
   const activeTab = state.activeTab;
-  const urgentRecs = recommendations.filter((r) => r.priority === 'urgent' && !r.dismissed).length;
+  const urgentRecs = useMemo(
+    () => (currentPlan ? currentPlan.recommendations.filter((r) => r.priority === 'urgent' && !r.dismissed).length : 0),
+    [currentPlan],
+  );
 
-  const setTab = (tab: string) => dispatch({ type: 'SET_ACTIVE_TAB', payload: tab });
+  const setTab = useCallback(
+    (tab: string) => dispatch({ type: 'SET_ACTIVE_TAB', payload: tab }),
+    [dispatch],
+  );
 
-  // --- Action Center items derived entirely from existing data ---
-  const overdueTasks = tasks.filter((t) => t.isOverdue && t.status !== 'completed');
-  const soonTasks = getUpcomingTasks(tasks, 7); // within 7 days
-  const unconfirmedVendors = vendors.filter((v) => v.status === 'researching' || v.status === 'contacted');
-  const isOverBudget = budgetSummary.isOverAllocated;
-  const isAtRisk = budgetHealth === 'at_risk';
+  const handleTabKeyDown = useCallback(
+    (e: React.KeyboardEvent, currentTabId: string) => {
+      const currentIndex = TABS.findIndex((t) => t.id === currentTabId);
+      if (currentIndex === -1) return;
+
+      let targetIndex = -1;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        targetIndex = (currentIndex + 1) % TABS.length;
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        targetIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+      } else if (e.key === 'Home') {
+        targetIndex = 0;
+      } else if (e.key === 'End') {
+        targetIndex = TABS.length - 1;
+      }
+
+      if (targetIndex !== -1) {
+        e.preventDefault();
+        const targetTab = TABS[targetIndex];
+        setTab(targetTab.id);
+        const el = document.getElementById(`tab-${targetTab.id}`);
+        el?.focus();
+      }
+    },
+    [setTab],
+  );
+
+  // --- Action Center items derived with memoization ---
+  const overdueTasks = useMemo(
+    () => (currentPlan ? currentPlan.tasks.filter((t) => t.isOverdue && t.status !== 'completed') : []),
+    [currentPlan],
+  );
+  const soonTasks = useMemo(
+    () => (currentPlan ? getUpcomingTasks(currentPlan.tasks, 7) : []),
+    [currentPlan],
+  );
+  const unconfirmedVendors = useMemo(
+    () => (currentPlan ? currentPlan.vendors.filter((v) => v.status === 'researching' || v.status === 'contacted') : []),
+    [currentPlan],
+  );
 
   type ActionItem = {
     id: string;
@@ -192,94 +236,125 @@ export default function DashboardPage() {
     tab: string;
   };
 
-  const actionItems: ActionItem[] = [];
+  const actionItems: ActionItem[] = useMemo(() => {
+    if (!currentPlan || !budgetSummary) return [];
+    const items: ActionItem[] = [];
+    const isOverBudget = budgetSummary.isOverAllocated;
+    const isAtRisk = budgetHealth === 'at_risk';
 
-  // Budget warning
-  if (isOverBudget) {
-    actionItems.push({
-      id: 'budget-over',
-      dot: 'action-item-dot-danger',
-      title: 'Budget over-allocated',
-      meta: `${formatCurrency(budgetSummary.overAllocatedBy, event.currency)} more allocated than total`,
-      badge: 'Over Budget',
-      badgeStyle: 'action-item-badge-danger',
-      tab: 'budget',
-    });
-  } else if (isAtRisk) {
-    actionItems.push({
-      id: 'budget-risk',
-      dot: 'action-item-dot-warning',
-      title: 'Budget approaching limit',
-      meta: `${budgetSummary.utilizationPercent}% utilized · ${formatCurrency(budgetSummary.remaining, event.currency)} remaining`,
-      badge: 'Near Limit',
-      badgeStyle: 'action-item-badge-warning',
-      tab: 'budget',
-    });
-  }
+    // Budget warning
+    if (isOverBudget) {
+      items.push({
+        id: 'budget-over',
+        dot: 'action-item-dot-danger',
+        title: 'Budget over-allocated',
+        meta: `${formatCurrency(budgetSummary.overAllocatedBy, currentPlan.event.currency)} more allocated than total`,
+        badge: 'Over Budget',
+        badgeStyle: 'action-item-badge-danger',
+        tab: 'budget',
+      });
+    } else if (isAtRisk) {
+      items.push({
+        id: 'budget-risk',
+        dot: 'action-item-dot-warning',
+        title: 'Budget approaching limit',
+        meta: `${budgetSummary.utilizationPercent}% utilized · ${formatCurrency(budgetSummary.remaining, currentPlan.event.currency)} remaining`,
+        badge: 'Near Limit',
+        badgeStyle: 'action-item-badge-warning',
+        tab: 'budget',
+      });
+    }
 
-  // Overdue tasks
-  if (overdueTasks.length > 0) {
-    const first = overdueTasks[0];
-    actionItems.push({
-      id: `overdue-${first.id}`,
-      dot: 'action-item-dot-danger',
-      title: first.title,
-      meta: `${overdueTasks.length > 1 ? `+${overdueTasks.length - 1} more overdue · ` : ''}was due ${Math.abs(first.daysUntilDeadline ?? 0)} days ago`,
-      badge: 'Overdue',
-      badgeStyle: 'action-item-badge-danger',
-      tab: 'tasks',
-    });
-  }
+    // Overdue tasks
+    if (overdueTasks.length > 0) {
+      const first = overdueTasks[0];
+      items.push({
+        id: `overdue-${first.id}`,
+        dot: 'action-item-dot-danger',
+        title: first.title,
+        meta: `${overdueTasks.length > 1 ? `+${overdueTasks.length - 1} more overdue · ` : ''}was due ${Math.abs(first.daysUntilDeadline ?? 0)} days ago`,
+        badge: 'Overdue',
+        badgeStyle: 'action-item-badge-danger',
+        tab: 'tasks',
+      });
+    }
 
-  // Urgent AI recommendations
-  const urgentRecsItems = recommendations.filter((r) => r.priority === 'urgent' && !r.dismissed);
-  if (urgentRecsItems.length > 0) {
-    actionItems.push({
-      id: `rec-${urgentRecsItems[0].id}`,
-      dot: 'action-item-dot-warning',
-      title: urgentRecsItems[0].title,
-      meta: `${urgentRecsItems.length > 1 ? `${urgentRecsItems.length} urgent AI insights · ` : ''}${urgentRecsItems[0].suggestedAction.slice(0, 60)}`,
-      badge: 'Urgent',
-      badgeStyle: 'action-item-badge-warning',
-      tab: 'recommendations',
-    });
-  }
+    // Urgent AI recommendations
+    const urgentRecsItems = currentPlan.recommendations.filter((r) => r.priority === 'urgent' && !r.dismissed);
+    if (urgentRecsItems.length > 0) {
+      items.push({
+        id: `rec-${urgentRecsItems[0].id}`,
+        dot: 'action-item-dot-warning',
+        title: urgentRecsItems[0].title,
+        meta: `${urgentRecsItems.length > 1 ? `${urgentRecsItems.length} urgent AI insights · ` : ''}${urgentRecsItems[0].suggestedAction.slice(0, 60)}`,
+        badge: 'Urgent',
+        badgeStyle: 'action-item-badge-warning',
+        tab: 'recommendations',
+      });
+    }
 
-  // Upcoming critical tasks
-  const criticalSoon = soonTasks.filter((t) => t.priority === 'critical').slice(0, 1);
-  if (criticalSoon.length > 0 && overdueTasks.length === 0) {
-    const t = criticalSoon[0];
-    actionItems.push({
-      id: `soon-${t.id}`,
-      dot: 'action-item-dot-warning',
-      title: t.title,
-      meta: `${t.category} · due in ${t.daysUntilDeadline} day${t.daysUntilDeadline !== 1 ? 's' : ''}`,
-      badge: 'Due Soon',
-      badgeStyle: 'action-item-badge-warning',
-      tab: 'timeline',
-    });
-  }
+    // Upcoming critical tasks
+    const criticalSoon = soonTasks.filter((t) => t.priority === 'critical').slice(0, 1);
+    if (criticalSoon.length > 0 && overdueTasks.length === 0) {
+      const t = criticalSoon[0];
+      items.push({
+        id: `soon-${t.id}`,
+        dot: 'action-item-dot-warning',
+        title: t.title,
+        meta: `${t.category} · due in ${t.daysUntilDeadline} day${t.daysUntilDeadline !== 1 ? 's' : ''}`,
+        badge: 'Due Soon',
+        badgeStyle: 'action-item-badge-warning',
+        tab: 'timeline',
+      });
+    }
 
-  // Unconfirmed vendors
-  if (unconfirmedVendors.length > 0 && actionItems.length < 4) {
-    actionItems.push({
-      id: 'vendors-pending',
-      dot: 'action-item-dot-info',
-      title: `${unconfirmedVendors.length} vendor${unconfirmedVendors.length > 1 ? 's' : ''} not yet confirmed`,
-      meta: unconfirmedVendors.slice(0, 3).map((v) => v.category).join(', '),
-      badge: 'Pending',
-      badgeStyle: 'action-item-badge-muted',
-      tab: 'vendors',
-    });
-  }
+    // Unconfirmed vendors
+    if (unconfirmedVendors.length > 0 && items.length < 4) {
+      items.push({
+        id: 'vendors-pending',
+        dot: 'action-item-dot-info',
+        title: `${unconfirmedVendors.length} vendor${unconfirmedVendors.length > 1 ? 's' : ''} not yet confirmed`,
+        meta: unconfirmedVendors.slice(0, 3).map((v) => v.category).join(', '),
+        badge: 'Pending',
+        badgeStyle: 'action-item-badge-muted',
+        tab: 'vendors',
+      });
+    }
+
+    return items;
+  }, [
+    currentPlan,
+    budgetSummary,
+    budgetHealth,
+    overdueTasks,
+    soonTasks,
+    unconfirmedVendors,
+  ]);
 
   const allClear = actionItems.length === 0;
 
   // "Next best action" — top upcoming critical task not overdue
-  const nextAction = tasks
-    .filter((t) => t.status !== 'completed' && !t.isOverdue && t.priority === 'critical')
-    .sort((a, b) => (a.daysUntilDeadline ?? 999) - (b.daysUntilDeadline ?? 999))[0]
-    ?? soonTasks[0];
+  const nextAction = useMemo(() => {
+    if (!currentPlan) return undefined;
+    return (
+      currentPlan.tasks
+        .filter((t) => t.status !== 'completed' && !t.isOverdue && t.priority === 'critical')
+        .sort((a, b) => (a.daysUntilDeadline ?? 999) - (b.daysUntilDeadline ?? 999))[0] ??
+      soonTasks[0]
+    );
+  }, [currentPlan, soonTasks]);
+
+  if (!state.isHydrated || !state.currentPlan || !budgetSummary || !taskStats) {
+    return (
+      <div className={styles.loading} aria-live="polite" aria-busy="true">
+        <div className="spinner" aria-hidden="true" />
+        <span>Loading your plan...</span>
+        <span className={styles.loadingLabel}>Preparing your event workspace</span>
+      </div>
+    );
+  }
+
+  const { event } = state.currentPlan;
 
   return (
     <div className={styles.dashboard}>
@@ -310,10 +385,12 @@ export default function DashboardPage() {
               key={tab.id}
               id={`tab-${tab.id}`}
               role="tab"
+              tabIndex={activeTab === tab.id ? 0 : -1}
               aria-selected={activeTab === tab.id}
               aria-controls={`panel-${tab.id}`}
               className={`${styles.navItem} ${activeTab === tab.id ? styles.navItemActive : ''}`}
               onClick={() => setTab(tab.id)}
+              onKeyDown={(e) => handleTabKeyDown(e, tab.id)}
             >
               <span className={styles.navIcon} aria-hidden="true">{tab.icon}</span>
               <span>{tab.label}</span>

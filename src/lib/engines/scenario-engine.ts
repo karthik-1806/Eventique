@@ -13,88 +13,135 @@ import type {
 import { v4 as uuidv4 } from 'uuid';
 import { recalculateBudgetForNewTotal } from './budget-engine';
 
-// Budget categories that can be reduced, in priority order (lowest priority first)
-const REDUCTION_PRIORITY_ORDER = [
-  'Accommodation',
-  'Transportation',
-  'Invitations & Stationery',
-  'Invitations',
-  'Marketing & Invitations',
-  'Entertainment & Music',
-  'Entertainment',
-  'Decoration & Flowers',
-  'Decoration',
-  'Photography & Video',
-  'Photography',
-  'Audio/Visual Equipment',
-  'Catering & Cake',
-  'Catering',
-  'Miscellaneous',
-  'Contingency',
-];
+// Budget category priority tiers for realistic water-fall budget reduction
+// Tier 1 (Discretionary - absorbs cuts first with highest elasticity)
+// Tier 2 (Semi-core - absorbs moderate cuts)
+// Tier 3 (Core essentials - protected, absorbs cuts only as a last resort)
+const TIER_WEIGHTS: Record<string, number> = {
+  // Tier 1: Discretionary / Flexible (weight 3.5)
+  accommodation: 3.5,
+  transportation: 3.5,
+  transport: 3.5,
+  invitations: 3.5,
+  marketing: 3.5,
+  entertainment: 3.2,
+  music: 3.2,
+  decoration: 3.0,
+  flowers: 3.0,
+  signage: 3.0,
+  miscellaneous: 3.0,
+  contingency: 2.8,
+
+  // Tier 2: Semi-Core (weight 1.5)
+  photography: 1.5,
+  video: 1.5,
+  'audio/visual': 1.5,
+  av: 1.5,
+  attire: 1.4,
+
+  // Tier 3: Core Essentials (weight 0.4 - strongly protected)
+  catering: 0.5,
+  cake: 0.6,
+  venue: 0.3,
+  security: 0.5,
+  permits: 0.4,
+  staff: 0.5,
+  volunteers: 0.5,
+};
+
+function getCategoryTierWeight(categoryName: string): number {
+  const lower = categoryName.toLowerCase();
+  for (const [key, weight] of Object.entries(TIER_WEIGHTS)) {
+    if (lower.includes(key)) return weight;
+  }
+  return 1.0; // default medium elasticity
+}
 
 /**
  * Calculate the financial impact of a budget reduction.
  * Purely deterministic — AI only explains the results afterward.
+ * Uses priority-tiered elasticity so discretionary categories absorb reductions first.
  */
 export function calculateBudgetReductionImpact(
   currentBudget: number,
   newBudget: number,
   budgetCategories: Budget['categories'],
+  currency: string = 'INR',
 ): { adjustments: BudgetAdjustment[]; totalReduction: number } {
-  const totalReduction = currentBudget - newBudget;
-  if (totalReduction <= 0) {
+  const safeCurrent = Math.max(0, currentBudget);
+  const safeNew = Math.max(0, newBudget);
+  const totalReduction = safeCurrent - safeNew;
+
+  if (totalReduction <= 0 || safeCurrent <= 0) {
     return { adjustments: [], totalReduction: 0 };
   }
 
-  // Scale categories proportionally, prioritizing reducing non-critical categories first
+  const unlockedCategories = budgetCategories.filter((c) => !c.isLocked && c.allocated > 0);
+  if (unlockedCategories.length === 0) {
+    return { adjustments: [], totalReduction: 0 };
+  }
+
+  // Calculate total weighted elasticity
+  let totalWeightedElasticity = 0;
+  const categoryWeights = unlockedCategories.map((cat) => {
+    const tierWeight = getCategoryTierWeight(cat.name);
+    const weightedElasticity = cat.allocated * tierWeight;
+    totalWeightedElasticity += weightedElasticity;
+    return { cat, weightedElasticity };
+  });
+
   const adjustments: BudgetAdjustment[] = [];
-  let remainingReduction = totalReduction;
+  let reductionAllocatedSoFar = 0;
 
-  // Sort categories by reduction priority (least important first)
-  const sortedCategories = [...budgetCategories]
-    .filter((c) => !c.isLocked)
-    .sort((a, b) => {
-      const aIdx = REDUCTION_PRIORITY_ORDER.findIndex((n) => a.name.includes(n) || n.includes(a.name));
-      const bIdx = REDUCTION_PRIORITY_ORDER.findIndex((n) => b.name.includes(n) || n.includes(b.name));
-      return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
-    });
+  for (let i = 0; i < categoryWeights.length; i++) {
+    const { cat, weightedElasticity } = categoryWeights[i];
+    const isLast = i === categoryWeights.length - 1;
 
-  const scaleFactor = newBudget / currentBudget;
+    let targetReduction: number;
+    if (isLast) {
+      // Last category absorbs any rounding difference to ensure exact match
+      targetReduction = totalReduction - reductionAllocatedSoFar;
+    } else {
+      const share = totalWeightedElasticity > 0 ? weightedElasticity / totalWeightedElasticity : 1 / categoryWeights.length;
+      targetReduction = Math.round(totalReduction * share);
+    }
 
-  for (const cat of sortedCategories) {
-    if (remainingReduction <= 0) break;
+    // Do not reduce category below 0
+    const actualReduction = Math.min(cat.allocated, Math.max(0, targetReduction));
+    reductionAllocatedSoFar += actualReduction;
 
-    const scaledAmount = Math.round(cat.allocated * scaleFactor);
-    const reduction = cat.allocated - scaledAmount;
-
-    if (reduction > 0) {
+    if (actualReduction > 0) {
+      const suggestedAmount = cat.allocated - actualReduction;
       adjustments.push({
         categoryId: cat.id,
         categoryName: cat.name,
         currentAmount: cat.allocated,
-        suggestedAmount: scaledAmount,
-        difference: -reduction,
-        reason: getReductionReason(cat.name, reduction),
+        suggestedAmount,
+        difference: -actualReduction,
+        reason: getReductionReason(cat.name, actualReduction, currency),
       });
-      remainingReduction -= reduction;
     }
   }
 
   return { adjustments, totalReduction };
 }
 
-function getReductionReason(categoryName: string, amount: number): string {
+function getReductionReason(categoryName: string, amount: number, currency: string = 'INR'): string {
   const name = categoryName.toLowerCase();
-  if (name.includes('decoration')) return 'Opt for simpler arrangements and DIY elements';
-  if (name.includes('entertainment')) return 'Streamline entertainment program or reduce duration';
-  if (name.includes('photography')) return 'Reduce coverage hours or skip videography';
-  if (name.includes('invitation')) return 'Use digital invitations and limit printed materials';
-  if (name.includes('transport')) return 'Reduce shuttle runs or use public transport';
-  if (name.includes('accommodation')) return 'Negotiate group rates or reduce rooms';
-  if (name.includes('catering')) return 'Simplify menu or reduce per-head cost';
-  if (name.includes('miscellaneous')) return 'Reduce contingency and discretionary items';
-  return `Proportional reduction of ₹${amount.toLocaleString('en-IN')}`;
+  const symbols: Record<string, string> = { INR: '₹', USD: '$', EUR: '€', GBP: '£' };
+  const sym = symbols[currency] ?? currency;
+  const formattedAmount = `${sym}${amount.toLocaleString(currency === 'INR' ? 'en-IN' : 'en-US')}`;
+
+  if (name.includes('decoration') || name.includes('flowers')) return `Opt for minimalist floral arrangements and repurposed decor (-${formattedAmount})`;
+  if (name.includes('entertainment') || name.includes('music')) return `Streamline DJ/performance schedule or reduce set hours (-${formattedAmount})`;
+  if (name.includes('photography') || name.includes('video')) return `Focus on core ceremony coverage, reducing extra crew hours (-${formattedAmount})`;
+  if (name.includes('invitation') || name.includes('marketing')) return `Transition to digital invites and minimal printed collateral (-${formattedAmount})`;
+  if (name.includes('transport')) return `Consolidate guest shuttles and optimize trip windows (-${formattedAmount})`;
+  if (name.includes('accommodation')) return `Prioritize VIP guest rooms and negotiate group tariff discounts (-${formattedAmount})`;
+  if (name.includes('catering') || name.includes('cake')) return `Refine buffet variety and live counters while safeguarding main course quality (-${formattedAmount})`;
+  if (name.includes('venue')) return `Retain primary hall booking while trimming ancillary suite charges (-${formattedAmount})`;
+  if (name.includes('miscellaneous') || name.includes('contingency')) return `Tighten incidental expense buffer (-${formattedAmount})`;
+  return `Targeted priority reduction of ${formattedAmount}`;
 }
 
 /**
@@ -178,11 +225,11 @@ function calculateScenarioImpact(
       financialDelta += delta;
 
       if (delta < 0) {
-        const { adjustments } = calculateBudgetReductionImpact(from, to, budget.categories);
+        const { adjustments } = calculateBudgetReductionImpact(from, to, budget.categories, event.currency);
         budgetAdjustments.push(...adjustments);
 
         // Risk assessment
-        const reductionPercent = Math.abs(delta) / from;
+        const reductionPercent = from > 0 ? Math.abs(delta) / from : 0;
         if (reductionPercent > 0.3) overallRiskLevel = 'high';
         else if (reductionPercent > 0.15) overallRiskLevel = 'medium';
 
@@ -202,6 +249,20 @@ function calculateScenarioImpact(
     if (change.field === 'date') {
       overallRiskLevel = overallRiskLevel === 'high' ? 'high' : 'medium';
       affectedTasks.push('Reschedule all vendors', 'Update venue booking', 'Revise task deadlines');
+    }
+
+    if (change.field === 'vendorCancellation') {
+      overallRiskLevel = 'high';
+      const estimatedSurcharge = Math.round(event.totalBudget * 0.05);
+      financialDelta += estimatedSurcharge;
+      affectedTasks.push('Emergency vendor search', 'Review contract cancellation clause', 'Secure backup deposits');
+    }
+
+    if (change.field === 'weatherEmergency') {
+      overallRiskLevel = overallRiskLevel === 'high' ? 'high' : 'medium';
+      const weatherCost = Math.round(event.totalBudget * 0.04);
+      financialDelta += weatherCost;
+      affectedTasks.push('Order weatherproofing canopy/tents', 'Confirm indoor backup space', 'Check electrical grounding');
     }
   }
 
@@ -235,6 +296,13 @@ function generateExperienceExplanation(
   changes: ScenarioChange[],
   adjustments: BudgetAdjustment[],
 ): string {
+  if (changes.some((c) => c.field === 'vendorCancellation')) {
+    return 'Loss of primary vendor disrupts scheduled operations. Immediate action needed to secure a backup vendor and preserve attendee experience.';
+  }
+  if (changes.some((c) => c.field === 'weatherEmergency')) {
+    return 'Outdoor experience must pivot indoors or provide shelter to ensure guest comfort, safety, and event continuity.';
+  }
+
   const highImpactReductions = adjustments.filter(
     (a) => a.categoryName.toLowerCase().includes('catering') ||
            a.categoryName.toLowerCase().includes('venue'),
@@ -250,6 +318,15 @@ function generateRiskExplanation(
   riskLevel: ScenarioImpact['overallRiskLevel'],
   changes: ScenarioChange[],
 ): string {
+  const hasVendorCancel = changes.some((c) => c.field === 'vendorCancellation');
+  const hasWeatherAlert = changes.some((c) => c.field === 'weatherEmergency');
+  if (hasVendorCancel) {
+    return 'Critical risk: Vendor cancellation requires immediate replacement. Rush booking premiums and availability constraints are likely.';
+  }
+  if (hasWeatherAlert) {
+    return 'Moderate-High risk: Weather changes require physical infrastructure safeguards (tents/indoor spaces) and rapid vendor re-coordination.';
+  }
+
   const hasDateShift = changes.some((c) => c.field === 'date');
   const hasGuestExpansion = changes.some((c) => c.field === 'guestCount' && Number(c.to) > Number(c.from));
 

@@ -58,21 +58,26 @@ const DEFAULT_ALLOCATIONS: Record<EventType, Array<{ name: string; percent: numb
  * Purely deterministic — no AI involved.
  */
 export function generateDefaultBudget(event: EventProfile): Budget {
-  const allocations = DEFAULT_ALLOCATIONS[event.type];
+  const allocations = DEFAULT_ALLOCATIONS[event.type] ?? DEFAULT_ALLOCATIONS.wedding;
   const categories: BudgetCategory[] = allocations.map((a) => ({
     id: uuidv4(),
     name: a.name,
-    allocated: Math.round((a.percent / 100) * event.totalBudget),
+    allocated: Math.round((a.percent / 100) * Math.max(0, event.totalBudget)),
     spent: 0,
     isLocked: false,
     notes: '',
     aiSuggested: false,
   }));
 
+  const contingencyCategory = allocations.find((a) =>
+    a.name.toLowerCase().includes('contingency'),
+  );
+  const contingencyPercent = contingencyCategory?.percent ?? 5;
+
   return {
     eventId: event.id,
     categories,
-    contingencyPercent: 5,
+    contingencyPercent,
   };
 }
 
@@ -107,16 +112,22 @@ export function applyAISuggestedAllocations(
  * Purely deterministic.
  */
 export function calculateBudgetSummary(budget: Budget, totalBudget: number): BudgetSummary {
+  const safeTotal = Math.max(0, totalBudget);
   const allocated = budget.categories.reduce((sum, c) => sum + c.allocated, 0);
   const spent = budget.categories.reduce((sum, c) => sum + c.spent, 0);
-  const remaining = totalBudget - spent;
-  const contingencyAmount = Math.round((budget.contingencyPercent / 100) * totalBudget);
-  const isOverAllocated = allocated > totalBudget;
-  const overAllocatedBy = isOverAllocated ? allocated - totalBudget : 0;
-  const utilizationPercent = totalBudget > 0 ? Math.round((spent / totalBudget) * 100) : 0;
+  const remaining = safeTotal - spent;
+  const contingencyCategory = budget.categories.find((c) =>
+    c.name.toLowerCase().includes('contingency'),
+  );
+  const contingencyAmount = contingencyCategory
+    ? contingencyCategory.allocated
+    : Math.round(((budget.contingencyPercent || 0) / 100) * safeTotal);
+  const isOverAllocated = allocated > safeTotal;
+  const overAllocatedBy = isOverAllocated ? allocated - safeTotal : 0;
+  const utilizationPercent = safeTotal > 0 ? Math.round((spent / safeTotal) * 100) : 0;
 
   return {
-    total: totalBudget,
+    total: safeTotal,
     allocated,
     spent,
     remaining,
@@ -199,13 +210,15 @@ export function estimateCateringCost(
   eventType: EventType,
   currency: string,
 ): number {
+  const safeGuests = Math.max(0, guestCount);
   const perPersonRates: Record<EventType, Record<string, number>> = {
     wedding: { INR: 1500, USD: 75, EUR: 65, GBP: 55 },
     birthday: { INR: 800, USD: 40, EUR: 35, GBP: 30 },
     community: { INR: 600, USD: 25, EUR: 22, GBP: 18 },
   };
-  const rate = perPersonRates[eventType][currency] ?? perPersonRates[eventType]['INR'];
-  return rate * guestCount;
+  const eventRates = perPersonRates[eventType] ?? perPersonRates.wedding;
+  const rate = eventRates[currency] ?? eventRates['INR'] ?? 1000;
+  return rate * safeGuests;
 }
 
 /**

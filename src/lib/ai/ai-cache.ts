@@ -29,14 +29,23 @@ export function getCachedAIResponse<T>(key: string): T | null {
     return null;
   }
 
+  // Refresh access order (true LRU by moving to end of Map insertion order)
+  cache.delete(key);
+  cache.set(key, entry);
+
   return entry.data as T;
 }
 
 export function setCachedAIResponse<T>(key: string, data: T, ttlMs: number = DEFAULT_TTL_MS): void {
-  // Simple LRU cleanup if max size reached
+  // True LRU cleanup: delete least recently accessed key if max size reached
   if (cache.size >= MAX_CACHE_SIZE) {
     const oldestKey = cache.keys().next().value;
     if (oldestKey) cache.delete(oldestKey);
+  }
+
+  // If key already exists, delete first to refresh insertion order
+  if (cache.has(key)) {
+    cache.delete(key);
   }
 
   cache.set(key, {

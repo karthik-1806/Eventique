@@ -66,6 +66,24 @@ export default function ScenariosPanel() {
         to: targetGuests,
         reason: 'Downsize for intimacy and cost savings',
       });
+    } else if (type === 'vendor_dropout') {
+      scenarioName = 'Key Vendor Cancellation';
+      scenarioDesc = 'Simulate primary vendor dropout with emergency replacement at 20% rush surcharge';
+      changes.push({
+        field: 'vendorCancellation',
+        from: 'Confirmed Vendor',
+        to: 'Emergency Replacement Required',
+        reason: 'Vendor unexpected cancellation requiring rush procurement',
+      });
+    } else if (type === 'weather_contingency') {
+      scenarioName = 'Adverse Weather Contingency';
+      scenarioDesc = 'Activate emergency weatherproofing marquee, indoor staging, and guest shelter';
+      changes.push({
+        field: 'weatherEmergency',
+        from: 'Open Air Setup',
+        to: 'Weather-Shielded Setup',
+        reason: 'Inclement weather risk requiring infrastructure contingency buffer',
+      });
     }
 
     const newScenario = buildScenario(
@@ -203,6 +221,18 @@ export default function ScenariosPanel() {
               onClick={() => handleCreatePresetScenario('guest_decrease_20')}
             >
               🏠 Intimate (-20% Guests)
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => handleCreatePresetScenario('vendor_dropout')}
+            >
+              ⚠️ Vendor Cancellation
+            </button>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => handleCreatePresetScenario('weather_contingency')}
+            >
+              🌧️ Weather Contingency
             </button>
           </div>
         </div>
@@ -352,7 +382,7 @@ export default function ScenariosPanel() {
                         <div className={styles.scenarioFlowStep}>
                           <span className={styles.scenarioFlowLabel}>Calculated Impact</span>
                           <span className={`${styles.scenarioFlowValue} ${sc.impact.financialDelta < 0 ? 'text-success' : sc.impact.financialDelta > 0 ? 'text-danger' : ''}`}>
-                            {sc.impact.financialDelta === 0 ? '₹0 change' : `${sc.impact.financialDelta < 0 ? '-' : '+'}${formatCurrency(Math.abs(sc.impact.financialDelta), event.currency)}`}
+                            {sc.impact.financialDelta === 0 ? `${formatCurrency(0, event.currency)} change` : `${sc.impact.financialDelta < 0 ? '-' : '+'}${formatCurrency(Math.abs(sc.impact.financialDelta), event.currency)}`}
                           </span>
                           <span className="text-xs text-muted">
                             {sc.impact.overallRiskLevel.toUpperCase()} risk · {sc.impact.budgetAdjustments.length} categories affected
@@ -376,7 +406,7 @@ export default function ScenariosPanel() {
                         }`}
                       >
                         {sc.impact.financialDelta === 0
-                          ? '₹0'
+                          ? formatCurrency(0, event.currency)
                           : `${sc.impact.financialDelta < 0 ? '-' : '+'}${formatCurrency(
                               Math.abs(sc.impact.financialDelta),
                               event.currency

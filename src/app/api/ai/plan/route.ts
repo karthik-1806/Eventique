@@ -35,6 +35,7 @@ const EventContextSchema = z.object({
 
 import { getClientIp, checkRateLimit, createRateLimitErrorResponse, RATE_LIMITS } from '@/lib/security/rate-limiter';
 import { generateCacheKey, getCachedAIResponse, setCachedAIResponse } from '@/lib/ai/ai-cache';
+import { callFastAPI } from '@/lib/api/fastapi-client';
 
 export async function POST(request: NextRequest) {
   // Rate limiting
@@ -54,6 +55,14 @@ export async function POST(request: NextRequest) {
       { error: 'Invalid request data', details: error instanceof Error ? error.message : 'Validation failed' },
       { status: 400 }
     );
+  }
+
+  // Attempt FastAPI delegation if configured
+  if (process.env.FASTAPI_BACKEND_URL) {
+    const fastApiRes = await callFastAPI<{ success: boolean; data: unknown }>('/plan/generate', ctx);
+    if (fastApiRes.success && fastApiRes.data) {
+      return NextResponse.json(fastApiRes.data);
+    }
   }
 
   // If API key is not configured, supply high-quality domain fallback plan

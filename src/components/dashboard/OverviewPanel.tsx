@@ -1,7 +1,8 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useEventContext } from '@/context/EventContext';
-import { calculateBudgetSummary, formatCurrency, getBudgetHealthStatus } from '@/lib/engines/budget-engine';
+import { calculateBudgetSummary, formatCurrency, getBudgetHealthStatus, getPerGuestCost } from '@/lib/engines/budget-engine';
 import { getTaskStats, getUpcomingTasks, getPlanningProgress } from '@/lib/engines/timeline-engine';
 import styles from './panels.module.css';
 
@@ -24,19 +25,36 @@ const VENDOR_STATUS_COLORS: Record<string, string> = {
 export default function OverviewPanel() {
   const { state, dispatch } = useEventContext();
   const { currentPlan } = state;
-  if (!currentPlan) return null;
 
-  const { event, budget, tasks, vendors, recommendations } = currentPlan;
-  const budgetSummary = calculateBudgetSummary(budget, event.totalBudget);
-  const taskStats = getTaskStats(tasks);
-  const upcomingTasks = getUpcomingTasks(tasks, 14);
-  const overdueTasks = tasks.filter((t) => t.isOverdue && t.status !== 'completed');
-  const progress = getPlanningProgress(tasks);
-  const budgetHealth = getBudgetHealthStatus(budgetSummary);
-  const activeRecs = recommendations.filter((r) => !r.dismissed);
+  const budgetSummary = useMemo(
+    () => (currentPlan ? calculateBudgetSummary(currentPlan.budget, currentPlan.event.totalBudget) : null),
+    [currentPlan],
+  );
+  const taskStats = useMemo(() => (currentPlan ? getTaskStats(currentPlan.tasks) : null), [currentPlan]);
+  const upcomingTasks = useMemo(() => (currentPlan ? getUpcomingTasks(currentPlan.tasks, 14) : []), [currentPlan]);
+  const overdueTasks = useMemo(
+    () => (currentPlan ? currentPlan.tasks.filter((t) => t.isOverdue && t.status !== 'completed') : []),
+    [currentPlan],
+  );
+  const progress = useMemo(() => (currentPlan ? getPlanningProgress(currentPlan.tasks) : 0), [currentPlan]);
+  const budgetHealth = useMemo(
+    () => (budgetSummary ? getBudgetHealthStatus(budgetSummary) : 'healthy'),
+    [budgetSummary],
+  );
+  const activeRecs = useMemo(
+    () => (currentPlan ? currentPlan.recommendations.filter((r) => !r.dismissed) : []),
+    [currentPlan],
+  );
   const topRec = activeRecs.find((r) => r.priority === 'urgent') ?? activeRecs[0];
 
-  const confirmedVendors = vendors.filter((v) => v.status === 'confirmed' || v.status === 'booked');
+  const confirmedVendors = useMemo(
+    () => (currentPlan ? currentPlan.vendors.filter((v) => v.status === 'confirmed' || v.status === 'booked') : []),
+    [currentPlan],
+  );
+
+  if (!currentPlan || !budgetSummary || !taskStats) return null;
+
+  const { event, budget, vendors } = currentPlan;
 
   // Budget bar color
   const budgetBarClass = budgetHealth === 'over_budget' ? 'danger' : budgetHealth === 'at_risk' ? 'warning' : '';
@@ -372,7 +390,7 @@ export default function OverviewPanel() {
             <div className="stat-card" role="listitem">
               <div className="stat-label">Per Guest</div>
               <div className="stat-value" style={{ fontSize: '1.25rem' }}>
-                {formatCurrency(Math.round(event.totalBudget / event.guestCount), event.currency)}
+                {formatCurrency(getPerGuestCost(event.totalBudget, event.guestCount), event.currency)}
               </div>
               <div className="stat-delta">budget per attendee</div>
             </div>

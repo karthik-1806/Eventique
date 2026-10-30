@@ -1,17 +1,19 @@
 {
-  "name": "challenge5",
-  "version": "0.1.0",
+  "name": "eventique",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "backend:dev": "python -m uvicorn app.main:app --app-dir backend --reload --port 8000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test:frontend": "npx tsx src/lib/engines/engines.test.ts && npx tsx src/lib/ai/schemas.test.ts && npx tsx src/lib/security/security.test.ts",
+    "test:backend": "python -m pytest backend/tests -v",
     "test": "npx tsx src/lib/engines/engines.test.ts && npx tsx src/lib/ai/schemas.test.ts && npx tsx src/lib/security/security.test.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "@types/uuid": "^10.0.0",
     "next": "^15.5.28",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -23,10 +25,12 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/uuid": "^10.0.0",
     "caniuse-lite": "^1.0.30001818",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

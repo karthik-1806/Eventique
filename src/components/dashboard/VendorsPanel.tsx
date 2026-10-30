@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useEventContext } from '@/context/EventContext';
 import { formatCurrency } from '@/lib/engines/budget-engine';
 import type { Vendor, VendorStatus } from '@/lib/models/types';
@@ -27,16 +27,48 @@ export default function VendorsPanel() {
   const { state, dispatch } = useEventContext();
   const [showAddModal, setShowAddModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState<'all' | VendorStatus>('all');
+  const triggerBtnRef = useRef<HTMLButtonElement | null>(null);
+  const modalRef = useRef<HTMLDivElement | null>(null);
+
+  const closeModal = () => {
+    setShowAddModal(false);
+    setTimeout(() => triggerBtnRef.current?.focus(), 50);
+  };
 
   useEffect(() => {
     if (!showAddModal) return;
+
+    // Auto-focus first input in modal
+    const timer = setTimeout(() => {
+      const firstInput = modalRef.current?.querySelector<HTMLElement>('input, button, select');
+      firstInput?.focus();
+    }, 50);
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setShowAddModal(false);
+        closeModal();
+      } else if (e.key === 'Tab') {
+        if (!modalRef.current) return;
+        const focusables = modalRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [showAddModal]);
   const [newVendor, setNewVendor] = useState<Omit<Vendor, 'id' | 'eventId' | 'aiSuggested'>>({
     category: '',
@@ -81,7 +113,7 @@ export default function VendorsPanel() {
         aiSuggested: false,
       },
     });
-    setShowAddModal(false);
+    closeModal();
     setNewVendor({ category: '', name: '', estimatedCost: 0, status: 'researching', contactInfo: '', deadline: '', notes: '' });
   };
 
@@ -94,6 +126,7 @@ export default function VendorsPanel() {
         <h2 id="vendors-heading" className={styles.panelTitle}>Vendor Tracker</h2>
         <button
           id="add-vendor-btn"
+          ref={triggerBtnRef}
           className="btn btn-primary btn-sm"
           onClick={() => setShowAddModal(true)}
           aria-label="Add new vendor"
@@ -238,10 +271,10 @@ export default function VendorsPanel() {
       {/* Add Vendor Modal */}
       {showAddModal && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="add-vendor-modal-title">
-          <div className="modal-content">
+          <div className="modal-content" ref={modalRef}>
             <div className="modal-header">
               <h3 id="add-vendor-modal-title">Add Vendor</h3>
-              <button className="modal-close" onClick={() => setShowAddModal(false)} aria-label="Close modal">✕</button>
+              <button className="modal-close" onClick={closeModal} aria-label="Close modal">✕</button>
             </div>
 
             <div className={styles.modalForm}>
@@ -311,7 +344,7 @@ export default function VendorsPanel() {
               </div>
 
               <div className="flex gap-3 justify-end border-top">
-                <button className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
+                <button className="btn btn-secondary" onClick={closeModal}>Cancel</button>
                 <button
                   id="save-vendor-btn"
                   className="btn btn-primary"

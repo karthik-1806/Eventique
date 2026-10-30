@@ -16,13 +16,41 @@ interface ClientRecord {
 }
 
 const clientMaps = new Map<string, Map<string, ClientRecord>>();
+const MAX_MAP_SIZE = 500;
+
+export function resetRateLimiter(): void {
+  clientMaps.clear();
+}
+
+/**
+ * Prunes expired records from a route's client map to prevent unbounded memory leaks
+ */
+function pruneExpiredRecords(routeMap: Map<string, ClientRecord>, now: number): void {
+  for (const [ip, record] of routeMap.entries()) {
+    if (now > record.resetAt) {
+      routeMap.delete(ip);
+    }
+  }
+}
 
 export function getClientIp(request: NextRequest): string {
   const forwarded = request.headers.get('x-forwarded-for');
   if (forwarded) {
-    return forwarded.split(',')[0].trim();
+    // Take the first valid IP from the comma-separated proxy chain
+    const parts = forwarded.split(',');
+    for (const part of parts) {
+      const trimmed = part.trim();
+      // Basic IPv4 / IPv6 validation regex to avoid spoofed malformed headers
+      if (/^(?:\d{1,3}\.){3}\d{1,3}$|^[a-fA-F0-9:]+$/.test(trimmed)) {
+        return trimmed;
+      }
+    }
   }
-  return request.headers.get('x-real-ip') ?? '127.0.0.1';
+  const realIp = request.headers.get('x-real-ip');
+  if (realIp && /^(?:\d{1,3}\.){3}\d{1,3}$|^[a-fA-F0-9:]+$/.test(realIp.trim())) {
+    return realIp.trim();
+  }
+  return '127.0.0.1';
 }
 
 export interface RateLimitResult {
@@ -45,6 +73,12 @@ export function checkRateLimit(
   }
 
   const now = Date.now();
+
+  // Prune expired records periodically if the map grows
+  if (routeMap.size > MAX_MAP_SIZE) {
+    pruneExpiredRecords(routeMap, now);
+  }
+
   const record = routeMap.get(clientIp);
 
   if (!record || now > record.resetAt) {

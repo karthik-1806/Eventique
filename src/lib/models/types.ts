@@ -107,7 +107,7 @@ export interface PlanningRecommendation {
 
 // ---- Scenarios ----
 export interface ScenarioChange {
-  field: 'totalBudget' | 'guestCount' | 'date' | 'priorities' | 'budgetCategory';
+  field: 'totalBudget' | 'guestCount' | 'date' | 'priorities' | 'budgetCategory' | 'vendorCancellation' | 'weatherEmergency';
   label?: string;
   from: number | string | string[];
   to: number | string | string[];

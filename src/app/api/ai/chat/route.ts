@@ -38,6 +38,7 @@ const ChatRequestSchema = z.object({
 
 import { getClientIp, checkRateLimit, createRateLimitErrorResponse, RATE_LIMITS } from '@/lib/security/rate-limiter';
 import { generateCacheKey, getCachedAIResponse, setCachedAIResponse } from '@/lib/ai/ai-cache';
+import { callFastAPI } from '@/lib/api/fastapi-client';
 
 export async function POST(request: NextRequest) {
   const ip = getClientIp(request);
@@ -52,6 +53,18 @@ export async function POST(request: NextRequest) {
     body = ChatRequestSchema.parse(raw);
   } catch {
     return NextResponse.json({ error: 'Invalid request' }, { status: 400 });
+  }
+
+  // Attempt FastAPI delegation if configured
+  if (process.env.FASTAPI_BACKEND_URL) {
+    const fastApiRes = await callFastAPI<{ message: string }>('/chat', {
+      message: body.message,
+      event_context: body.eventContext,
+      conversation_history: body.conversationHistory,
+    });
+    if (fastApiRes.success && fastApiRes.data) {
+      return NextResponse.json({ success: true, message: fastApiRes.data.message });
+    }
   }
 
   // Graceful fallback when API key is not configured

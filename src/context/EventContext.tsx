@@ -4,7 +4,7 @@
 // EVENT CONTEXT — Global state management for event planning
 // ============================================================
 
-import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import React, { createContext, useContext, useReducer, useCallback, useEffect, useMemo } from 'react';
 import type {
   EventPlan,
   EventProfile,
@@ -222,7 +222,7 @@ function reducer(state: AppState, action: AppAction): AppState {
       const scenarioDeltaSign = scenario.impact.financialDelta > 0 ? '+' : '';
       const formattedDelta = scenario.impact.financialDelta !== 0
         ? `${scenarioDeltaSign}${formatCurrency(scenario.impact.financialDelta, event.currency)}`
-        : '₹0';
+        : formatCurrency(0, event.currency);
 
       const scenarioNotice: ChatMessage = {
         id: uuidv4(),
@@ -400,8 +400,13 @@ export function EventProvider({ children }: { children: React.ReactNode }) {
     return calculateBudgetSummary(state.currentPlan.budget, state.currentPlan.event.totalBudget);
   }, [state.currentPlan]);
 
+  const contextValue = useMemo(
+    () => ({ state, dispatch, loadDemoPlan, createNewPlan, getEventContext, getBudgetSummary }),
+    [state, dispatch, loadDemoPlan, createNewPlan, getEventContext, getBudgetSummary],
+  );
+
   return (
-    <EventContext.Provider value={{ state, dispatch, loadDemoPlan, createNewPlan, getEventContext, getBudgetSummary }}>
+    <EventContext.Provider value={contextValue}>
       {children}
     </EventContext.Provider>
   );

@@ -135,18 +135,27 @@ export function buildScenarioExplanationPrompt(
     riskLevel: string;
   },
 ): string {
+  const sanitizedChanges = changes.map(
+    (c) =>
+      `  - ${sanitizeForPrompt(String(c.field), 100)}: ${sanitizeForPrompt(String(c.from), 100)} → ${sanitizeForPrompt(String(c.to), 100)}`,
+  );
+  const sanitizedCategories = calculatedImpact.affectedCategories.map((cat) =>
+    sanitizeForPrompt(cat, 100),
+  );
+  const sanitizedRisk = sanitizeForPrompt(calculatedImpact.riskLevel, 50);
+
   return `You are an expert event planning consultant. A user has created a what-if scenario for their ${ctx.eventType}.
 
 ${buildEventContextBlock(ctx)}
 
 SCENARIO: "${sanitizeForPrompt(scenarioName)}"
 Changes proposed:
-${changes.map((c) => `  - ${c.field}: ${c.from} → ${c.to}`).join('\n')}
+${sanitizedChanges.join('\n')}
 
 CALCULATED FINANCIAL IMPACT (computed by application, not by you):
   Financial delta: ${ctx.currency} ${calculatedImpact.financialDelta.toLocaleString()}
-  Affected categories: ${calculatedImpact.affectedCategories.join(', ')}
-  Risk level: ${calculatedImpact.riskLevel}
+  Affected categories: ${sanitizedCategories.join(', ')}
+  Risk level: ${sanitizedRisk}
 
 TASK: Provide a thoughtful explanation of:
 1. What this change means for the event experience

@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useEventContext } from '@/context/EventContext';
 import type { EventType, Currency, EventProfile } from '@/lib/models/types';
+import { formatCurrency } from '@/lib/engines/budget-engine';
 import { v4 as uuidv4 } from 'uuid';
 import styles from './page.module.css';
 
@@ -328,7 +329,7 @@ export default function CreateEventPage() {
                   aria-invalid={!!errors.totalBudget}
                 />
                 <span id="budget-hint" className="text-xs text-muted">
-                  Suggested for this event type: {form.currency === 'INR' ? '₹' : ''}{DEFAULT_BUDGETS[form.type].toLocaleString()}
+                  Suggested for this event type: {formatCurrency(DEFAULT_BUDGETS[form.type], form.currency)}
                 </span>
                 {errors.totalBudget && <span id="budget-error" className={styles.error} role="alert">{errors.totalBudget}</span>}
               </div>
@@ -347,7 +348,7 @@ export default function CreateEventPage() {
                 aria-invalid={!!errors.guestCount}
               />
               <span id="guests-hint" className="text-xs text-muted">
-                Per-guest budget: ~{form.currency === 'INR' ? '₹' : ''}{form.guestCount > 0 ? Math.round(form.totalBudget / form.guestCount).toLocaleString() : 0}
+                Per-guest budget: ~{formatCurrency(form.guestCount > 0 ? Math.round(form.totalBudget / form.guestCount) : 0, form.currency)}
               </span>
               {errors.guestCount && <span id="guests-error" className={styles.error} role="alert">{errors.guestCount}</span>}
             </div>
